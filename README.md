@@ -1,0 +1,1 @@
+Słówka dla opiekunów
