@@ -1,0 +1,163 @@
+// --- Einfaches Brettspiel mit Fragen ---
+// Regeln: Würfeln -> auf Feld ziehen -> Frage lösen.
+// Richtig = nächste Runde wieder würfeln. Falsch = 1 Runde aussetzen.
+
+const boardSize = 36;              // 6x6 Felder
+let position = 0;                  // aktuelle Feldposition (0-basiert)
+let penaltySkip = false;           // muss nächste Runde aussetzen?
+let canRoll = true;                // darf gewürfelt werden?
+let currentQ = null;               // aktuell angezeigte Frage
+
+// Fragen/Karten – DE Lösung, PL Prompt
+const QUESTIONS = [
+  { de:"Hallo!", pl:"Powiedz po niemiecku: Cześć!" },
+  { de:"Guten Morgen!", pl:"Powiedz po niemiecku: Dzień dobry (rano)." },
+  { de:"Guten Abend!", pl:"Powiedz po niemiecku: Dobry wieczór." },
+  { de:"Wie heißt du?", pl:"Jak zapytasz: Jak masz na imię?" },
+  { de:"Ich heiße Maja.", pl:"Przetłumacz: Nazywam się Maja." },
+  { de:"Wie geht's?", pl:"Jak zapytasz: Jak leci?" },
+  { de:"Gut, danke.", pl:"Przetłumacz: Dobrze, dziękuję." },
+  { de:"Bitte.", pl:"Przetłumacz: Proszę / Nie ma za co." },
+  { de:"Danke.", pl:"Przetłumacz: Dziękuję." },
+  { de:"Ja", pl:"Przetłumacz: Tak (po niemiecku)."},
+  { de:"Nein", pl:"Przetłumacz: Nie (po niemiecku)."},
+  { de:"Entschuldigung.", pl:"Przetłumacz: Przepraszam." },
+  { de:"Ich verstehe nicht.", pl:"Przetłumacz: Nie rozumiem." },
+  { de:"Sprechen Sie Polnisch?", pl:"Przetłumacz: Czy mówi Pan/Pani po polsku?" },
+  { de:"Ich komme aus Polen.", pl:"Przetłumacz: Pochodzę z Polski." },
+  { de:"Ich lerne Deutsch.", pl:"Przetłumacz: Uczę się niemieckiego." },
+  { de:"Wo ist die Toilette?", pl:"Przetłumacz: Gdzie jest toaleta?" },
+  { de:"Wie viel kostet das?", pl:"Przetłumacz: Ile to kosztuje?" },
+  { de:"Hilfe!", pl:"Przetłumacz: Pomocy!" },
+  { de:"eins", pl:"Przetłumacz: jeden." },
+  { de:"zwei", pl:"Przetłumacz: dwa." },
+  { de:"drei", pl:"Przetłumacz: trzy." },
+  { de:"vier", pl:"Przetłumacz: cztery." },
+  { de:"fünf", pl:"Przetłumacz: pięć." }
+];
+
+// UI helpers
+const $ = (id) => document.getElementById(id);
+const $board = () => $("board");
+const $qa = () => $("qa");
+const $qText = () => $("questionText");
+const $options = () => $("options");
+const $input = () => $("typingInput");
+const $submit = () => $("submitBtn");
+const $next = () => $("nextBtn");
+const $status = () => $("statusText");
+const $rollBtn = () => $("rollBtn");
+
+// Init
+window.addEventListener("DOMContentLoaded", () => {
+  createBoard();
+  bindQA();
+  $rollBtn().addEventListener("click", onRoll);
+  updateHighlight();
+  updateStatus("Rzucaj kostką, aby zacząć.");
+});
+
+// Brett
+function createBoard(){
+  $board().innerHTML = "";
+  for (let i=0; i<boardSize; i++){
+    const d = document.createElement("div");
+    d.className = "cell";
+    if (i === boardSize-1) { d.classList.add("finish"); d.textContent = "META"; }
+    else d.textContent = (i+1);
+    $board().appendChild(d);
+  }
+}
+
+function updateHighlight(){
+  document.querySelectorAll(".cell").forEach(c => c.classList.remove("active"));
+  const idx = Math.min(position, boardSize-1);
+  const cell = document.querySelectorAll(".cell")[idx];
+  if (cell) cell.classList.add("active");
+}
+
+// Würfeln
+function onRoll(){
+  if (!canRoll) return;
+  if (penaltySkip){
+    penaltySkip = false;
+    updateStatus("Runda opuszczona. Możesz znowu rzucać 🎲");
+    return;
+  }
+  const dice = Math.floor(Math.random()*6)+1;
+  updateStatus(`🎲 Wyrzuciłeś/aś ${dice}.`);
+  position += dice;
+  if (position >= boardSize-1){
+    position = boardSize-1;
+    updateHighlight();
+    updateStatus("🎉 META! Wygrałeś/aś!");
+    $rollBtn().disabled = true;
+    return;
+  }
+  updateHighlight();
+  // Frage anzeigen
+  showQuestion();
+}
+
+// Fragen-Panel
+function bindQA(){
+  $submit().addEventListener("click", submitTyping);
+  $next().addEventListener("click", () => {
+    hideQA();
+    updateStatus("Możesz rzucać kostką 🎲");
+  });
+}
+
+function showQuestion(){
+  currentQ = pickQuestion();
+  $qText().textContent = currentQ.pl + " (odpowiedz po niemiecku)";
+  $options().innerHTML = "";   // wir nutzen Tippen als Standard
+  $input().value = "";
+  $input().classList.remove("hidden");
+  $submit().classList.remove("hidden");
+  $next().classList.add("hidden");
+  $("feedback").textContent = "";
+  $qa().classList.remove("hidden");
+  canRoll = false;
+  $rollBtn().disabled = true;
+  $input().focus();
+}
+
+function hideQA(){
+  $qa().classList.add("hidden");
+  canRoll = true;
+  $rollBtn().disabled = false;
+}
+
+function submitTyping(){
+  const answer = normalize($input().value);
+  const correct = normalize(currentQ.de);
+  if (!answer){
+    $("feedback").textContent = "Wpisz odpowiedź po niemiecku.";
+    return;
+  }
+  if (answer === correct){
+    $("feedback").textContent = "✅ Dobrze! Możesz rzucać dalej.";
+    $submit().classList.add("hidden");
+    $input().classList.add("hidden");
+    $next().classList.remove("hidden");
+    penaltySkip = false;
+  } else {
+    $("feedback").textContent = `❌ Nie tak. Poprawnie: „${currentQ.de}”. Następna runda pauza.`;
+    penaltySkip = true;
+    $submit().classList.add("hidden");
+    $input().classList.add("hidden");
+    $next().classList.remove("hidden");
+  }
+}
+
+// Helfer
+function pickQuestion(){
+  return QUESTIONS[Math.floor(Math.random()*QUESTIONS.length)];
+}
+function normalize(s){
+  return (s||"").trim().toLowerCase().replace(/\s+/g," ");
+}
+function updateStatus(msg){
+  $status().textContent = msg;
+}
